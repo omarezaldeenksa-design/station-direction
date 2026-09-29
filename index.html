@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>اتجاه المحطة - اختيار الإحداثي</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #f0f4f8; padding: 20px; direction: rtl; color: #333; max-width: 750px; margin: auto; }
+    .card { background: #fff; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    h2 { margin-top: 0; color: #1e293b; }
+    .form-group { margin-bottom: 15px; }
+    label { display: block; margin-bottom: 5px; font-weight: bold; }
+    input[type="text"], select, textarea { width: 100%; padding: 10px; font-size: 15px; border-radius: 6px; border: 1px solid #cbd5e1; box-sizing: border-box; }
+    .row { display: flex; gap: 10px; margin-bottom: 10px; }
+    button { background: #2563eb; color: white; border: none; padding: 10px 18px; border-radius: 6px; cursor: pointer; font-size: 15px; font-weight: bold; }
+    button:hover { background: #1d4ed8; }
+    .btn-danger { background: #ef4444; }
+    .btn-danger:hover { background: #dc2626; }
+    .btn-sm { padding: 5px 10px; font-size: 13px; }
+    textarea { height: 80px; resize: vertical; }
+    .result-box { margin-top: 15px; padding: 15px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 16px; line-height: 1.8; }
+    .status { font-weight: bold; color: #16a34a; margin-top: 8px; display: block; }
+    .error { color: #dc2626; }
+    .city-badge { background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 4px; font-weight: bold; }
+    .coord-item { background: #ffffff; border: 1px solid #cbd5e1; padding: 12px; margin-top: 10px; border-radius: 6px; }
+
+    .map-btn {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 6px 12px;
+      background-color: #0f766e;
+      color: white;
+      text-decoration: none;
+      border-radius: 6px;
+      font-weight: bold;
+      font-size: 13px;
+    }
+    .map-btn:hover { background-color: #115e59; }
+
+    .select-btn {
+      background: #0284c7;
+      padding: 6px 12px;
+      font-size: 13px;
+      margin-top: 5px;
+    }
+    .select-btn:hover { background: #0369a1; }
+
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { padding: 8px 12px; border: 1px solid #cbd5e1; text-align: center; }
+    th { background: #f1f5f9; }
+    .table-container { max-height: 300px; overflow-y: auto; margin-top: 10px; border: 1px solid #e2e8f0; border-radius: 6px; }
+  </style>
+</head>
+<body>
+
+  <!-- البحث والحساب -->
+  <div class="card">
+    <h2>اتجاه المحطة والمسافة</h2>
+    <p style="color: #64748b; font-size: 14px;">اكتب رقم المحطة لعرض مواقعها المتاحة.</p>
+    
+    <div class="row">
+      <input type="text" id="stationNum" value="66540" placeholder="أدخل رقم المحطة">
+      <button onclick="showDirection()">اعرض الاتجاه والمسافة</button>
+    </div>
+
+    <div class="form-group">
+      <label for="citySelect">النقطة المرجعية للحساب:</label>
+      <select id="citySelect" onchange="recalculateIfSelected()">
+        <option value="auto">(أقرب مدينة تلقائياً)</option>
+        <option value="current_loc">📍 موقعي الحالي (GPS)</option>
+      </select>
+    </div>
+
+    <div id="resultBox" class="result-box">
+      أدخل رقم المحطة واضغط "اعرض الاتجاه والمسافة".
+    </div>
+  </div>
+
+  <!-- رفع البيانات -->
+  <details class="card" open>
+    <summary><b>رفع بيانات المحطات <span id="stationCountTag">(0 إحداثي مخزن)</span></b></summary>
+    <div style="margin-top: 15px;">
+      <div style="display:flex; justify-content: space-between; align-items: center;">
+        <label for="fileInput">اختر ملفات لإضافتها للبيانات الحالية:</label>
+        <button class="btn-danger btn-sm" onclick="clearAllStations()">🗑️ حذف كل البيانات المرفوعة</button>
+      </div>
+      <input type="file" id="fileInput" accept=".json,.csv,.txt" multiple style="margin-top: 5px;">
+      <span id="loadStatus" class="status"></span>
+
+      <hr style="margin: 15px 0; border: 0; border-top: 1px solid #e2e8f0;">
+
+      <label for="jsonPaste">أو الصق المحتوى لإضافته للبيانات الحالية:</label>
+      <textarea id="jsonPaste" placeholder='مثال JSON:&#10;{ "66540": "26.3260, 43.9750" }&#10;&#10;أو CSV:&#10;66540, 26.3260, 43.9750'></textarea>
+      <button onclick="loadFromTextarea()" style="margin-top: 8px;">دمج مع البيانات الحالية</button>
+    </div>
+  </details>
+
+  <!-- إدارة البيانات -->
+  <details class="card">
+    <summary><b>🛠️ تعديل وإدارة البيانات المرفوعة</b></summary>
+    <div style="margin-top: 15px;">
+      <label>إضافة / تعديل إحداثي لمحطة:</label>
+      <div class="row">
+        <input type="text" id="editNum" placeholder="رقم المحطة">
+        <input type="text" id="editCoords" placeholder="الإحداثيات (lat, lng)">
+        <button onclick="addOrUpdateStation()" style="white-space: nowrap;">إضافة إحداثي</button>
+      </div>
+
+      <div class="row" style="margin-top: 15px;">
+        <input type="text" id="searchTable" placeholder="تصفية/بحث برقم المحطة..." onkeyup="renderTable()">
+      </div>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>رقم المحطة</th>
+              <th>الإحداثيات المسجلة</th>
+              <th>خيارات</th>
+            </tr>
+          </thead>
+          <tbody id="stationsTableBody">
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </details>
+
+  <!-- مراكز المدن -->
+  <details class="card">
+    <summary><b>مراكز المدن</b></summary>
+    <div style="margin-top: 15px;">
+      <label for="citiesInput">تنسيق: اسم المدينة, خط العرض, خط الطول</label>
+      <textarea id="citiesInput">بريدة, 26.3260, 43.9750
+عنيزة, 26.0840, 43.9930
+الرس, 25.8694, 43.4973
+البكيرية, 26.1400, 43.6600
+البدائع, 25.9856, 43.7381
+المذنب, 25.8600, 44.2200</textarea>
+      <button onclick="saveCities()" style="margin-top: 8px;">حفظ المدن</button>
+      <span id="citiesStatus" class="status"></span>
+    </div>
+  </details>
+
+  <script>
+    let stations = {}; 
+    let cities = {};
+    let currentSelectedStation = null;
+    let currentSelectedIndex = null;
+
+    document.getElementById('fileInput').addEventListener('change', function(e) {
+      const files = e.target.files;
+      if (!files || files.length === 0) return;
+
+      let loadedCount = 0;
+      let totalFiles = files.length;
+      let successFiles = 0;
+
+      Array.from(files).forEach(file => {
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+          if (parseAndMergeData(evt.target.result)) successFiles++;
+          loadedCount++;
+
+          if (loadedCount === totalFiles) {
+            saveStationsToStorage();
+            const statusEl = document.getElementById('loadStatus');
+            statusEl.className = successFiles > 0 ? 'status' : 'status error';
+            statusEl.innerText = successFiles > 0 ? `✔️ تم دمج ${successFiles} ملف بنجاح!` : '❌ فشل تحميل الملفات.';
+          }
+        };
+        reader.readAsText(file);
+      });
+    });
+
+    function loadFromTextarea() {
+      const text = document.getElementById('jsonPaste').value.trim();
+      if (!text) return;
+      if (parseAndMergeData(text)) {
+        saveStationsToStorage();
+        document.getElementById('loadStatus').className = 'status';
+        document.getElementById('loadStatus').innerText = '✔️ تم دمج النص بنجاح!';
+        document.getElementById('jsonPaste').value = '';
+      } else {
+        document.getElementById('loadStatus').className = 'status error';
+        document.getElementById('loadStatus').innerText = '❌ صيغة غير صحيحة!';
+      }
+    }
+
+    function parseAndMergeData(rawText) {
+      let tempParsed = {};
+      try {
+        let json = JSON.parse(rawText);
+        for (let key in json) {
+          tempParsed[key] = Array.isArray(json[key]) ? json[key] : [json[key]];
+        }
+      } catch (e) {
+        const lines = rawText.split('\n');
+        lines.forEach(line => {
+          const parts = line.split(/[,;\t]/).map(s => s.trim().replace(/['"]/g, ''));
+          if (parts.length >= 3) {
+            let key = parts[0];
+            let val = `${parts[1]},${parts[2]}`;
+            if (!tempParsed[key]) tempParsed[key] = [];
+            tempParsed[key].push(val);
+          } else if (parts.length === 2) {
+            let key = parts[0];
+            let val = parts[1];
+            if (!tempParsed[key]) tempParsed[key] = [];
+            tempParsed[key].push(val);
+          }
+        });
+      }
+
+      if (Object.keys(tempParsed).length > 0) {
+        for (let key in tempParsed) {
+          if (!stations[key]) stations[key] = [];
+          tempParsed[key].forEach(coord => {
+            if (!stations[key].includes(coord)) {
+              stations[key].push(coord);
+            }
+          });
+        }
+        return true;
+      }
+      return false;
+    }
+
+    function saveStationsToStorage() {
+      localStorage.setItem('saved_stations_v2', JSON.stringify(stations));
+      updateCount();
+      renderTable();
+    }
+
+    function renderTable() {
+      const tbody = document.getElementById('stationsTableBody');
+      const filterText = document.getElementById('searchTable').value.trim().toLowerCase();
+      tbody.innerHTML = '';
+
+      const keys = Object.keys(stations);
+      if (keys.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" style="color:#94a3b8;">لا توجد محطات مرفوعة حالياً.</td></tr>';
+        return;
+      }
+
+      keys.forEach(stNum => {
+        if (filterText && !stNum.toLowerCase().includes(filterText)) return;
+
+        const tr = document.createElement('tr');
+        const coordsList = stations[stNum].map((c, idx) => `
+          <div style="margin-bottom:4px;"><code>${c}</code> <button class="btn-sm btn-danger" onclick="deleteSpecificCoord('${stNum}', ${idx})" style="padding:2px 6px; font-size:11px;">حذف</button></div>
+        `).join('');
+
+        tr.innerHTML = `
+          <td><b>${stNum}</b> (${stations[stNum].length})</td>
+          <td>${coordsList}</td>
+          <td>
+            <button class="btn-sm btn-danger" onclick="deleteStation('${stNum}')">حذف المحطة بالكامل</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function addOrUpdateStation() {
+      const num = document.getElementById('editNum').value.trim();
+      const coords = document.getElementById('editCoords').value.trim();
+
+      if (!num || !coords) {
+        alert('يرجى إدخال رقم المحطة والإحداثيات.');
+        return;
+      }
+
+      if (!stations[num]) stations[num] = [];
+      if (!stations[num].includes(coords)) {
+        stations[num].push(coords);
+      }
+      
+      saveStationsToStorage();
+      document.getElementById('editNum').value = '';
+      document.getElementById('editCoords').value = '';
+    }
+
+    function deleteSpecificCoord(stNum, index) {
+      const coordValue = stations[stNum][index];
+      const confirmMsg = `هل أنت متأكد من حذف هذا الإحداثي؟\n\n- رقم المحطة: ${stNum}\n- الإحداثي المراد حذفه: ${coordValue}\n- المتبقي بعد الحذف: ${stations[stNum].length - 1} إحداثي لهذا الرقم.`;
+      
+      if (confirm(confirmMsg)) {
+        stations[stNum].splice(index, 1);
+        if (stations[stNum].length === 0) delete stations[stNum];
+        saveStationsToStorage();
+      }
+    }
+
+    function deleteStation(stNum) {
+      const coordsCount = stations[stNum] ? stations[stNum].length : 0;
+      const confirmMsg = `تأكيد حذف المحطة بالكامل:\n\n- رقم المحطة: ${stNum}\n- عدد الإحداثيات المسجلة لها: ${coordsCount} إحداثي\n\nهل أنت متأكد من الحذف؟`;
+      
+      if (confirm(confirmMsg)) {
+        delete stations[stNum];
+        saveStationsToStorage();
+      }
+    }
+
+    function clearAllStations() {
+      const totalStations = Object.keys(stations).length;
+      let totalCoords = 0;
+      for (let k in stations) totalCoords += stations[k].length;
+
+      if (totalStations === 0) {
+        alert('لا توجد بيانات مرفوعة لحذفها.');
+        return;
+      }
+
+      const confirmMsg = `⚠️ تحذير: حذف كافة البيانات المرفوعة!\n\nسيتم حذف:\n- عدد المحطات: ${totalStations} محطة\n- إجمالي الإحداثيات: ${totalCoords} إحداثي\n\nهل أنت متأكد من الاستمرار؟`;
+
+      if (confirm(confirmMsg)) {
+        stations = {};
+        localStorage.removeItem('saved_stations_v2');
+        saveStationsToStorage();
+        document.getElementById('loadStatus').className = 'status';
+        document.getElementById('loadStatus').innerText = '🗑️ تم مسح جميع البيانات بنجاح.';
+        document.getElementById('resultBox').innerText = 'تم مسح البيانات.';
+      }
+    }
+
+    function updateCount() {
+      let totalCoords = 0;
+      for (let k in stations) totalCoords += stations[k].length;
+      document.getElementById('stationCountTag').innerText = `(${totalCoords} إحداثي - ${Object.keys(stations).length} محطة)`;
+    }
+
+    function saveCities() {
+      const text = document.getElementById('citiesInput').value.trim();
+      const lines = text.split('\n');
+      cities = {};
+      const select = document.getElementById('citySelect');
+      
+      const currentVal = select.value;
+      select.innerHTML = `
+        <option value="auto">(أقرب مدينة تلقائياً)</option>
+        <option value="current_loc">📍 موقعي الحالي (GPS)</option>
+      `;
+
+      lines.forEach(line => {
+        const parts = line.split(',').map(s => s.trim());
+        if (parts.length >= 3 && !isNaN(parts[1]) && !isNaN(parts[2])) {
+          cities[parts[0]] = { lat: parseFloat(parts[1]), lng: parseFloat(parts[2]) };
+          const opt = document.createElement('option');
+          opt.value = parts[0];
+          opt.innerText = parts[0];
+          select.appendChild(opt);
+        }
+      });
+
+      select.value = currentVal;
+      localStorage.setItem('saved_cities', text);
+      document.getElementById('citiesStatus').innerText = `تم حفظ ${Object.keys(cities).length} مدينة.`;
+    }
+
+    function calculateDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
+      return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+    }
+
+    function calculateBearing(lat1, lon1, lat2, lon2) {
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
+      const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) - Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
+      let brng = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+
+      if (brng >= 337.5 || brng < 22.5) return 'شمال';
+      if (brng >= 22.5 && brng < 67.5) return 'شمال شرق';
+      if (brng >= 67.5 && brng < 112.5) return 'شرق';
+      if (brng >= 112.5 && brng < 157.5) return 'جنوب شرق';
+      if (brng >= 157.5 && brng < 202.5) return 'جنوب';
+      if (brng >= 202.5 && brng < 247.5) return 'جنوب غرب';
+      if (brng >= 247.5 && brng < 292.5) return 'غرب';
+      return 'شمال غرب';
+    }
+
+    function showDirection() {
+      const id = document.getElementById('stationNum').value.trim();
+      const res = document.getElementById('resultBox');
+
+      if (!id || !stations[id] || stations[id].length === 0) {
+        res.innerHTML = `<span class="error">المحطة رقم (<b>${id}</b>) غير موجودة في البيانات.</span>`;
+        return;
+      }
+
+      currentSelectedStation = id;
+      let coordsArray = stations[id];
+
+      // إذا كانت المحطة تمتلك إحداثي واحد فقط، يتم عرض التفاصيل مباشرة
+      if (coordsArray.length === 1) {
+        displayCoordDetails(id, 0);
+      } else {
+        // إذا كان أكثر من إحداثي، يطلب من المستخدم الاختيار
+        let html = `🏢 المحطة رقم <b>${id}</b> تحتوي على <b>${coordsArray.length} إحداثيات</b>.<br>اختر الإحداثي المطلوب لعرض بياناته:<br>`;
+        coordsArray.forEach((coord, idx) => {
+          html += `
+            <div class="coord-item" style="display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <b>خيار #${idx + 1}:</b> <code>${coord}</code>
+              </div>
+              <button class="select-btn" onclick="displayCoordDetails('${id}', ${idx})">عرض هذا الإحداثي 📍</button>
+            </div>
+          `;
+        });
+        res.innerHTML = html;
+      }
+    }
+
+    function displayCoordDetails(stNum, index) {
+      currentSelectedIndex = index;
+      const res = document.getElementById('resultBox');
+      const coordStr = stations[stNum][index];
+      const selectedOption = document.getElementById('citySelect').value;
+
+      const parts = coordStr.split(',').map(s => parseFloat(s.trim()));
+      if (parts.length < 2 || isNaN(parts[0]) || isNaN(parts[1])) {
+        res.innerHTML = `<span class="error">صيغة الإحداثي غير صحيحة.</span>`;
+        return;
+      }
+
+      let targetCity = selectedOption;
+      let isAuto = (selectedOption === 'auto');
+
+      if (isAuto || selectedOption === 'current_loc') {
+        let minDist = Infinity;
+        for (let c in cities) {
+          let d = calculateDistance(cities[c].lat, cities[c].lng, parts[0], parts[1]);
+          if (d < minDist) { minDist = d; targetCity = c; }
+        }
+      }
+
+      const dist = calculateDistance(cities[targetCity].lat, cities[targetCity].lng, parts[0], parts[1]).toFixed(2);
+      const dir = calculateBearing(cities[targetCity].lat, cities[targetCity].lng, parts[0], parts[1]);
+      const googleMapsUrl = `https://www.google.com/maps?q=${parts[0]},${parts[1]}`;
+
+      let backBtn = stations[stNum].length > 1 ? `<button onclick="showDirection()" style="background:#64748b; margin-top:10px;" class="btn-sm">⬅️ الرجوع لخيارات المحطة (${stations[stNum].length})</button><br>` : '';
+
+      res.innerHTML = `
+        ${backBtn}
+        <div class="coord-item">
+          <b>🏢 المحطة رقم:</b> ${stNum} ${stations[stNum].length > 1 ? `(الموقع ${index + 1} من أصل ${stations[stNum].length})` : ''}<br>
+          🏙️ المدينة المرجعية: <span class="city-badge">${targetCity}</span> ${isAuto ? '(تلقائي)' : ''}<br>
+          🧭 الاتجاه: تقع <b>${dir}</b> مدينة <b>${targetCity}</b><br>
+          📏 المسافة: <b>${dist} كم</b> من مركز ${targetCity}<br>
+          📍 الإحداثيات: <code>${parts[0]}, ${parts[1]}</code><br>
+          🗺️ <a href="${googleMapsUrl}" target="_blank" class="map-btn">📍 فتح الموقع في خرائط جوجل</a>
+        </div>
+      `;
+    }
+
+    function recalculateIfSelected() {
+      if (currentSelectedStation && currentSelectedIndex !== null) {
+        displayCoordDetails(currentSelectedStation, currentSelectedIndex);
+      }
+    }
+
+    window.onload = function() {
+      if (localStorage.getItem('saved_cities')) document.getElementById('citiesInput').value = localStorage.getItem('saved_cities');
+      saveCities();
+      if (localStorage.getItem('saved_stations_v2')) {
+        try { stations = JSON.parse(localStorage.getItem('saved_stations_v2')); updateCount(); } catch(e){}
+      }
+      renderTable();
+    };
+  </script>
+</body>
+</html>
